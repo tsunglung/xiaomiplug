@@ -1,75 +1,88 @@
-"""Support for Xiaomi Smart WiFi Socket and Smart Power Strip."""
+"""Switch of the Xiaomi Plug/PowerStrip component."""
+# pylint: disable=import-error
 import asyncio
 import logging
+from datetime import timedelta
 from functools import partial
 
-import homeassistant.helpers.config_validation as cv
+from miio import DeviceException
 import voluptuous as vol
-from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchEntity
+
+from homeassistant.components.switch import (
+    ENTITY_ID_FORMAT,
+    PLATFORM_SCHEMA,
+    SwitchEntity,
+)
+from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_MODE,
     CONF_HOST,
     CONF_NAME,
     CONF_TOKEN,
+    CONF_MAC
 )
-from homeassistant.exceptions import PlatformNotReady
-from miio import (  # pylint: disable=import-error
-    AirConditioningCompanionV3,
-    ChuangmiPlug,
-    Device,
-    DeviceException,
-    PowerStrip,
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.util import slugify
+from homeassistant.components.xiaomi_miio.const import (
+    CONF_DEVICE,
+    CONF_FLOW_TYPE,
 )
 from miio.powerstrip import PowerMode  # pylint: disable=import-error
 
+from .const import (
+    ATTR_POWER,
+    ATTR_TEMPERATURE,
+    ATTR_LOAD_POWER,
+    ATTR_MODEL,
+    ATTR_POWER_MODE,
+    ATTR_WIFI_LED,
+    ATTR_POWER_PRICE,
+    ATTR_PRICE,
+    ATTR_WORKING_TIME,
+    ATTR_COUNT_DOWN_TIME,
+    ATTR_KEEP_RELAY,
+    CONF_MODEL,
+    DATA_STATE,
+    DATA_DEVICE,
+    DATA_KEY,
+    DEFAULT_NAME,
+    DOMAIN,
+    MODEL_ZIMI_POWERSTRIP_V2,
+    MODEL_CHUANGMI_PLUG_V3,
+    MODEL_QMI_POWERSTRIP_2A1C1,
+    MODELS_PLUG_WITH_USB_MIIO,
+    MODELS_PLUG_MIIO,
+    MODELS_POWERSTRIP_MIIO,
+    MODELS_ACPARTNER_MIIO,
+    MODELS_MIOT,
+    MODELS_ALL_DEVICES
+)
+
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_NAME = "Xiaomi Miio Switch"
-DATA_KEY = "switch.xiaomi_miio_plug"
-DOMAIN = "xiaomi_miio_plug"
+SCAN_INTERVAL = timedelta(seconds=10)
 
-CONF_MODEL = "model"
-MODEL_POWER_STRIP_V2 = "zimi.powerstrip.v2"
-MODEL_PLUG_V3 = "chuangmi.plug.v3"
+DEFAULT_NAME = DEFAULT_NAME + " Switch"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_TOKEN): vol.All(cv.string, vol.Length(min=32, max=32)),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_MODEL): vol.In(
-            [
-                "chuangmi.plug.v1",
-                "qmi.powerstrip.v1",
-                "zimi.powerstrip.v2",
-                "chuangmi.plug.m1",
-                "chuangmi.plug.m3",
-                "chuangmi.plug.v2",
-                "chuangmi.plug.v3",
-                "chuangmi.plug.hmi205",
-                "chuangmi.plug.hmi206",
-                "chuangmi.plug.hmi208",
-                "lumi.acpartner.v3",
-            ]
-        ),
+        vol.Optional(CONF_MODEL): vol.In(MODELS_ALL_DEVICES),
     }
 )
-
-ATTR_POWER = "power"
-ATTR_TEMPERATURE = "temperature"
-ATTR_LOAD_POWER = "load_power"
-ATTR_MODEL = "model"
-ATTR_POWER_MODE = "power_mode"
-ATTR_WIFI_LED = "wifi_led"
-ATTR_POWER_PRICE = "power_price"
-ATTR_PRICE = "price"
 
 SUCCESS = ["ok"]
 
 FEATURE_SET_POWER_MODE = 1
 FEATURE_SET_WIFI_LED = 2
 FEATURE_SET_POWER_PRICE = 4
+FEATURE_SET_BUZZER = 8
+FEATURE_COUNTDOWN = 16
+FEATURE_SET_KEEP_RELAY = 32
 
 FEATURE_FLAGS_GENERIC = 0
 
@@ -79,12 +92,24 @@ FEATURE_FLAGS_POWER_STRIP_V1 = (
 
 FEATURE_FLAGS_POWER_STRIP_V2 = FEATURE_SET_WIFI_LED | FEATURE_SET_POWER_PRICE
 
+FEATURE_FLAGS_POWER_STRIP_V3 = (
+    FEATURE_SET_POWER_MODE | FEATURE_SET_WIFI_LED | FEATURE_SET_BUZZER | FEATURE_COUNTDOWN | FEATURE_SET_KEEP_RELAY
+)
+
 FEATURE_FLAGS_PLUG_V3 = FEATURE_SET_WIFI_LED
+
+FEATURE_FLAGS_GENERIC = 0
+
 
 SERVICE_SET_WIFI_LED_ON = "switch_set_wifi_led_on"
 SERVICE_SET_WIFI_LED_OFF = "switch_set_wifi_led_off"
 SERVICE_SET_POWER_MODE = "switch_set_power_mode"
 SERVICE_SET_POWER_PRICE = "switch_set_power_price"
+SERVICE_START_COUNT_DOWN = "switch_start_count_down"
+SERVICE_STOP_COUNT_DOWN = "switch_stop_count_down"
+SERVICE_SET_COUNT_DOWN_TIME = "switch_set_count_down_time"
+SERVICE_SET_KEEP_RELAY = "switch_set_keep_relay"
+SERVICE_SET_NOT_KEEP_RELAY = "switch_set_not_keep_relay"
 
 SERVICE_SCHEMA = vol.Schema({vol.Optional(ATTR_ENTITY_ID): cv.entity_ids})
 
@@ -94,6 +119,10 @@ SERVICE_SCHEMA_POWER_MODE = SERVICE_SCHEMA.extend(
 
 SERVICE_SCHEMA_POWER_PRICE = SERVICE_SCHEMA.extend(
     {vol.Required(ATTR_PRICE): vol.All(vol.Coerce(float), vol.Range(min=0))}
+)
+
+SERVICE_SCHEMA_COUNT_DOWN = SERVICE_SCHEMA.extend(
+    {vol.Required(ATTR_COUNT_DOWN_TIME): vol.All(vol.Coerce(int), vol.Range(min=0))}
 )
 
 SERVICE_TO_METHOD = {
@@ -109,110 +138,122 @@ SERVICE_TO_METHOD = {
     },
 }
 
+SERVICE_TO_METHOD_V2 = {
+    SERVICE_START_COUNT_DOWN: {"method": "async_start_count_down"},
+    SERVICE_STOP_COUNT_DOWN: {"method": "async_stop_count_down"},
+    SERVICE_SET_COUNT_DOWN_TIME: {
+        "method": "async_set_count_down_time",
+        "schema": SERVICE_SCHEMA_COUNT_DOWN,
+    },
+    SERVICE_SET_KEEP_RELAY: {"method": "async_set_keep_relay"},
+    SERVICE_SET_NOT_KEEP_RELAY: {"method": "async_set_not_keep_relay"},
+}
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Set up the switch from config."""
-    if DATA_KEY not in hass.data:
-        hass.data[DATA_KEY] = {}
+    """Import Xiaomi Plug/PowerStrip configuration from YAML."""
+    _LOGGER.warning(
+        "Loading Xiaomi Plug/PowerStrip via platform setup is deprecated; Please remove it from your configuration"
+    )
+    hass.async_create_task(
+        hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": SOURCE_IMPORT},
+            data=config,
+        )
+    )
 
-    host = config[CONF_HOST]
-    token = config[CONF_TOKEN]
-    name = config[CONF_NAME]
-    model = config.get(CONF_MODEL)
 
-    _LOGGER.info("Initializing with host %s (token %s...)", host, token[:5])
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up the switch from a config entry."""
+    entities = []
 
-    devices = []
-    unique_id = None
+    host = config_entry.options[CONF_HOST]
+    token = config_entry.options[CONF_TOKEN]
+    name = config_entry.title
+    model = config_entry.options[CONF_MODEL]
+    unique_id = config_entry.unique_id
 
-    if model is None:
-        try:
-            miio_device = Device(host, token)
-            device_info = await hass.async_add_executor_job(miio_device.info)
-            model = device_info.model
-            unique_id = f"{model}-{device_info.mac_address}"
-            _LOGGER.info(
-                "%s %s %s detected",
-                model,
-                device_info.firmware_version,
-                device_info.hardware_version,
-            )
-        except DeviceException as ex:
-            raise PlatformNotReady from ex
+    if config_entry.options[CONF_FLOW_TYPE] == CONF_DEVICE:
+        if DATA_KEY not in hass.data:
+            hass.data[DATA_KEY] = {}
 
-    if model in ["chuangmi.plug.v1", "chuangmi.plug.v3", "chuangmi.plug.hmi208"]:
-        plug = ChuangmiPlug(host, token, model=model)
-
-        # The device has two switchable channels (mains and a USB port).
-        # A switch device per channel will be created.
-        for channel_usb in [True, False]:
-            device = ChuangMiPlugSwitch(name, plug, model, unique_id, channel_usb)
-            devices.append(device)
+        plug = hass.data[DOMAIN][host]
+        if model in MODELS_PLUG_WITH_USB_MIIO:
+            # The device has two switchable channels (mains and a USB port).
+            # A switch device per channel will be created.
+            for channel_usb in [True, False]:
+                device = ChuangMiPlugSwitch(name, plug, model, unique_id, channel_usb)
+                entities.append(device)
+                hass.data[DATA_KEY][host] = device
+        elif model in MODELS_POWERSTRIP_MIIO:
+            device = XiaomiPowerStripSwitch(name, plug, model, unique_id)
+            entities.append(device)
             hass.data[DATA_KEY][host] = device
-
-    elif model in ["qmi.powerstrip.v1", "zimi.powerstrip.v2"]:
-        plug = PowerStrip(host, token, model=model)
-        device = XiaomiPowerStripSwitch(name, plug, model, unique_id)
-        devices.append(device)
-        hass.data[DATA_KEY][host] = device
-    elif model in [
-        "chuangmi.plug.m1",
-        "chuangmi.plug.m3",
-        "chuangmi.plug.v2",
-        "chuangmi.plug.hmi205",
-        "chuangmi.plug.hmi206",
-    ]:
-        plug = ChuangmiPlug(host, token, model=model)
-        device = XiaomiPlugGenericSwitch(name, plug, model, unique_id)
-        devices.append(device)
-        hass.data[DATA_KEY][host] = device
-    elif model in ["lumi.acpartner.v3"]:
-        plug = AirConditioningCompanionV3(host, token)
-        device = XiaomiAirConditioningCompanionSwitch(name, plug, model, unique_id)
-        devices.append(device)
-        hass.data[DATA_KEY][host] = device
-    else:
-        _LOGGER.error(
-            "Unsupported device found! Please create an issue at "
-            "https://github.com/rytilahti/python-miio/issues "
-            "and provide the following data: %s",
-            model,
-        )
-        return False
-
-    async_add_entities(devices, update_before_add=True)
-
-    async def async_service_handler(service):
-        """Map services to methods on XiaomiPlugGenericSwitch."""
-        method = SERVICE_TO_METHOD.get(service.service)
-        params = {
-            key: value for key, value in service.data.items() if key != ATTR_ENTITY_ID
-        }
-        entity_ids = service.data.get(ATTR_ENTITY_ID)
-        if entity_ids:
-            devices = [
-                device
-                for device in hass.data[DATA_KEY].values()
-                if device.entity_id in entity_ids
-            ]
+        elif model in MODELS_PLUG_MIIO:
+            device = XiaomiPlugGenericSwitch(name, plug, model, unique_id)
+            entities.append(device)
+            hass.data[DATA_KEY][host] = device
+        elif model in MODELS_ACPARTNER_MIIO:
+            device = XiaomiAirConditioningCompanionSwitch(name, plug, model, unique_id)
+            entities.append(device)
+            hass.data[DATA_KEY][host] = device
+            #hass.data[DATA_KEY][host][DATA_DEVICE] = device
+        elif model in MODELS_MIOT:
+            device = XiaomiPowerStripMiot(name, plug, model, unique_id, config_entry.options)
+            entities.append(device)
+            hass.data[DATA_KEY][host] = device
         else:
-            devices = hass.data[DATA_KEY].values()
+            _LOGGER.error(
+                "Unsupported device found! Please create an issue at "
+                "https://github.com/tsunglung/XiaomiPlug/issues "
+                "and provide the following data: %s",
+                model,
+            )
+            return
 
-        update_tasks = []
-        for device in devices:
-            if not hasattr(device, method["method"]):
-                continue
-            await getattr(device, method["method"])(**params)
-            update_tasks.append(device.async_update_ha_state(True))
+        async def async_service_handler(service):
+            """Map services to methods on Xiaomi Plug/PowerStrip."""
+            method = SERVICE_TO_METHOD.get(service.service)
+            if method is None:
+                method = SERVICE_TO_METHOD_V2.get(service.service)
+            params = {
+                key: value
+                for key, value in service.data.items()
+                if key != ATTR_ENTITY_ID
+            }
+            entity_ids = service.data.get(ATTR_ENTITY_ID)
+            if entity_ids:
+                devices = [
+                    device
+                    for device in hass.data[DATA_KEY].values()
+                    if device.entity_id in entity_ids
+                ]
+            else:
+                devices = hass.data[DATA_KEY].values()
+            update_tasks = []
+            for device in devices:
+                if not hasattr(device, method["method"]):
+                    continue
+                await getattr(device, method["method"])(**params)
+                update_tasks.append(device.async_update_ha_state(True))
 
-        if update_tasks:
-            await asyncio.wait(update_tasks)
+            if update_tasks:
+                await asyncio.wait(update_tasks)
 
-    for plug_service in SERVICE_TO_METHOD:
-        schema = SERVICE_TO_METHOD[plug_service].get("schema", SERVICE_SCHEMA)
-        hass.services.async_register(
-            DOMAIN, plug_service, async_service_handler, schema=schema
-        )
+        for service, _ in SERVICE_TO_METHOD.items():
+            schema = SERVICE_TO_METHOD[service].get("schema", SERVICE_SCHEMA)
+            hass.services.async_register(
+                DOMAIN, service, async_service_handler, schema=schema
+            )
+        if model in MODELS_MIOT:
+            for service, _ in SERVICE_TO_METHOD_V2.items():
+                schema = SERVICE_TO_METHOD_V2[service].get("schema", SERVICE_SCHEMA)
+                hass.services.async_register(
+                    DOMAIN, service, async_service_handler, schema=schema
+                )
+
+
+    async_add_entities(entities, update_before_add=False)
 
 
 class XiaomiPlugGenericSwitch(SwitchEntity):
@@ -224,10 +265,12 @@ class XiaomiPlugGenericSwitch(SwitchEntity):
         self._plug = plug
         self._model = model
         self._unique_id = unique_id
+        self._mac = None
 
         self._icon = "mdi:power-socket"
         self._available = False
         self._state = None
+        self._status = None
         self._state_attrs = {ATTR_TEMPERATURE: None, ATTR_MODEL: self._model}
         self._device_features = FEATURE_FLAGS_GENERIC
         self._skip_update = False
@@ -261,6 +304,29 @@ class XiaomiPlugGenericSwitch(SwitchEntity):
     def is_on(self):
         """Return true if switch is on."""
         return self._state
+
+    @property
+    def device_info(self):
+        """Return the device info."""
+        info = self._plug.info()
+        device_info = {
+            "identifiers": {(DOMAIN, self._unique_id)},
+            "manufacturer": (self._model or "Xiaomi").split(".", 1)[0].capitalize(),
+            "name": self._name,
+            "model": self._model,
+            "sw_version": info.firmware_version,
+            "hw_version": info.hardware_version
+        }
+
+        if self._mac is not None:
+            device_info["connections"] = {(dr.CONNECTION_NETWORK_MAC, self._mac)}
+
+        return device_info
+
+    @property
+    def status(self):
+        """ Return the device status """
+        return self._status
 
     async def _try_command(self, mask_error, func, *args, **kwargs):
         """Call a plug command handling error messages."""
@@ -309,6 +375,7 @@ class XiaomiPlugGenericSwitch(SwitchEntity):
         try:
             state = await self.hass.async_add_executor_job(self._plug.status)
             _LOGGER.debug("Got new state: %s", state)
+            self._status = state
 
             self._available = True
             self._state = state.is_on
@@ -348,6 +415,53 @@ class XiaomiPlugGenericSwitch(SwitchEntity):
             price,
         )
 
+    async def async_start_count_down(self):
+        """Start count down."""
+        if self._device_features & FEATURE_COUNTDOWN == 0:
+            return
+
+        await self._try_command(
+            "Start count down failed.", self._plug.count_down, True
+        )
+
+    async def async_stop_count_down(self):
+        """Stop count down."""
+        if self._device_features & FEATURE_COUNTDOWN == 0:
+            return
+
+        await self._try_command(
+            "Stop count down failed.", self._plug.count_down, False
+        )
+
+    async def async_set_count_down_time(self, price: int):
+        """Set the count time."""
+        if self._device_features & FEATURE_COUNTDOWN == 0:
+            return
+
+        await self._try_command(
+            "Setting the count time of the power strip failed.",
+            self._plug.set_count_down_time,
+            price,
+        )
+
+    async def async_set_keep_relay(self):
+        """Set keep relay."""
+        if self._device_features & FEATURE_SET_KEEP_RELAY == 0:
+            return
+
+        await self._try_command(
+            "Set keep relay failed.", self._plug.set_keep_relay, True
+        )
+
+    async def async_set_not_keep_relay(self):
+        """Set Not keep relay."""
+        if self._device_features & FEATURE_SET_KEEP_RELAY == 0:
+            return
+
+        await self._try_command(
+            "Set not keep relay failed.", self._plug.set_keep_relay, False
+        )
+
 
 class XiaomiPowerStripSwitch(XiaomiPlugGenericSwitch):
     """Representation of a Xiaomi Power Strip."""
@@ -356,7 +470,7 @@ class XiaomiPowerStripSwitch(XiaomiPlugGenericSwitch):
         """Initialize the plug switch."""
         super().__init__(name, plug, model, unique_id)
 
-        if self._model == MODEL_POWER_STRIP_V2:
+        if self._model == MODEL_ZIMI_POWERSTRIP_V2:
             self._device_features = FEATURE_FLAGS_POWER_STRIP_V2
         else:
             self._device_features = FEATURE_FLAGS_POWER_STRIP_V1
@@ -382,6 +496,7 @@ class XiaomiPowerStripSwitch(XiaomiPlugGenericSwitch):
         try:
             state = await self.hass.async_add_executor_job(self._plug.status)
             _LOGGER.debug("Got new state: %s", state)
+            self._status = state
 
             self._available = True
             self._state = state.is_on
@@ -431,7 +546,7 @@ class ChuangMiPlugSwitch(XiaomiPlugGenericSwitch):
         super().__init__(name, plug, model, unique_id)
         self._channel_usb = channel_usb
 
-        if self._model == MODEL_PLUG_V3:
+        if self._model == MODEL_CHUANGMI_PLUG_V3:
             self._device_features = FEATURE_FLAGS_PLUG_V3
             self._state_attrs[ATTR_WIFI_LED] = None
             if self._channel_usb is False:
@@ -477,6 +592,7 @@ class ChuangMiPlugSwitch(XiaomiPlugGenericSwitch):
         try:
             state = await self.hass.async_add_executor_job(self._plug.status)
             _LOGGER.debug("Got new state: %s", state)
+            self._status = state
 
             self._available = True
             if self._channel_usb:
@@ -537,6 +653,7 @@ class XiaomiAirConditioningCompanionSwitch(XiaomiPlugGenericSwitch):
         try:
             state = await self.hass.async_add_executor_job(self._plug.status)
             _LOGGER.debug("Got new state: %s", state)
+            self._status = state
 
             self._available = True
             self._state = state.power_socket == "on"
@@ -546,3 +663,76 @@ class XiaomiAirConditioningCompanionSwitch(XiaomiPlugGenericSwitch):
             if self._available:
                 self._available = False
                 _LOGGER.error("Got exception while fetching the state: %s", ex)
+
+
+class XiaomiPowerStripMiot(XiaomiPlugGenericSwitch):
+    """Representation of a Xiaomi Power Strip Miot"""
+
+    def __init__(self, name, plug, model, unique_id, config):
+        """Initialize the plug switch."""
+        super().__init__(name, plug, model, unique_id)
+        self._mac = config.get(CONF_MAC, config.get(CONF_TOKEN))
+        self._host = config[CONF_HOST]
+        self._status = None
+
+        if self._model == MODEL_QMI_POWERSTRIP_2A1C1:
+            self._device_features = FEATURE_FLAGS_POWER_STRIP_V3
+        else:
+            self._device_features = 0
+
+        self._state_attrs[ATTR_LOAD_POWER] = None
+
+        if self._device_features & FEATURE_SET_POWER_MODE == 1:
+            self._state_attrs[ATTR_POWER_MODE] = None
+
+        if self._device_features & FEATURE_SET_WIFI_LED == 1:
+            self._state_attrs[ATTR_WIFI_LED] = None
+
+        if self._device_features & FEATURE_SET_POWER_PRICE == 1:
+            self._state_attrs[ATTR_POWER_PRICE] = None
+
+        self._state_attrs[ATTR_WORKING_TIME] = None
+        self._state_attrs[ATTR_KEEP_RELAY] = None
+
+    async def async_update(self):
+        """Fetch state from the device."""
+        # On state change the device doesn't provide the new state immediately.
+        if self._skip_update:
+            self._skip_update = False
+            return
+
+        try:
+            state = await self.hass.async_add_executor_job(self._plug.status)
+            self._status = state
+            _LOGGER.debug("Got new state: %s", state)
+
+            self._available = True
+            self._state = state.is_on
+            self._state_attrs.update(
+                {ATTR_TEMPERATURE: state.temperature, ATTR_LOAD_POWER: state.load_power}
+            )
+
+            if self._device_features & FEATURE_SET_POWER_MODE == 1 and state.mode:
+                self._state_attrs[ATTR_POWER_MODE] = state.mode
+
+            if self._device_features & FEATURE_SET_WIFI_LED == 1 and state.wifi_led:
+                self._state_attrs[ATTR_WIFI_LED] = state.wifi_led
+
+            self._state_attrs[ATTR_WORKING_TIME] = state.working_time
+            self._state_attrs[ATTR_KEEP_RELAY] = state.keep_relay
+
+        except DeviceException as ex:
+            if self._available:
+                self._available = False
+                _LOGGER.error("Got exception while fetching the state: %s", ex)
+
+    async def async_set_power_mode(self, mode: str):
+        """Set the power mode."""
+        if self._device_features & FEATURE_SET_POWER_MODE == 0:
+            return
+
+        await self._try_command(
+            "Setting the power mode of the power strip failed.",
+            self._plug.set_power_mode,
+            PowerMode(mode),
+        )

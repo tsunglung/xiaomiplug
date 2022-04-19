@@ -1,26 +1,56 @@
 switch_set_wifi_led_on:
   description: Turn the wifi led on.
+  target:
+    description: The entity of the switch/powerstrip to turn led on.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
   fields:
     entity_id:
       description: Name of the xiaomi miio entity.
       example: 'switch.xiaomi_miio_device'
 switch_set_wifi_led_off:
   description: Turn the wifi led off.
+  target:
+    description: The entity of the switch/powerstrip to turn led off.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
   fields:
     entity_id:
       description: Name of the xiaomi miio entity.
       example: 'switch.xiaomi_miio_device'
 switch_set_power_price:
   description: Set the power price.
+  target:
+    description: The entity of the switch/powerstrip to set power price.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
   fields:
     entity_id:
       description: Name of the xiaomi miio entity.
       example: 'switch.xiaomi_miio_device'
-    mode:
+    price:
       description: Power price, between 0 and 999.
       example: 31
+      selector:
+        number:
 switch_set_power_mode:
   description: Set the power mode.
+  target:
+    description: The entity of the switch/powerstrip to set power mode.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
   fields:
     entity_id:
       description: Name of the xiaomi miio entity.
@@ -28,3 +58,80 @@ switch_set_power_mode:
     mode:
       description: Power mode, valid values are 'normal' and 'green'.
       example: 'green'
+      selector:
+        select:
+          options:
+          - 'normal'
+          - 'green'
+switch_start_count_down:
+  description: Start count down.
+  target:
+    description: The entity of the switch/powerstrip to start count down.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
+  fields:
+    entity_id:
+      description: Name of the xiaomi miio entity.
+      example: 'switch.xiaomi_miio_device'
+switch_stop_count_down:
+  description: Stop count down.
+  target:
+    description: The entity of the switch/powerstrip to stop conut down.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
+  fields:
+    entity_id:
+      description: Name of the xiaomi miio entity.
+      example: 'switch.xiaomi_miio_device'
+switch_set_count_down_time:
+  description: Set the time of count down.
+  target:
+    description: The entity of the switch/powerstrip to set the time of count down.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
+  fields:
+    entity_id:
+      description: Name of the xiaomi miio entity.
+      example: 'switch.xiaomi_miio_device'
+    time:
+      description: count down time in second, between 0 and 999.
+      example: 120
+      selector:
+        number:
+          max: 86400
+          min: 0
+switch_set_keep_relay:
+  description: Set keep relay.
+  target:
+    description: The entity of the switch/powerstrip to set keep relay.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
+  fields:
+    entity_id:
+      description: Name of the xiaomi miio entity.
+      example: 'switch.xiaomi_miio_device'
+switch_set_not_keep_relay:
+  description: Set NOT keep relay.
+  target:
+    description: The entity of the switch/powerstrip to set NOT keep relay.
+    example: switch.xiaomi_miio_device
+    required: true
+    entity:
+      integration: xiaomi_plug
+      domain: switch
+  fields:
+    entity_id:
+      description: Name of the xiaomi miio entity.
+      example: 'switch.xiaomi_miio_device'
