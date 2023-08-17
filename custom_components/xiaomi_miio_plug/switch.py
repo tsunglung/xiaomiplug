@@ -52,6 +52,7 @@ from .const import (
     MODEL_ZIMI_POWERSTRIP_V2,
     MODEL_CHUANGMI_PLUG_V3,
     MODEL_QMI_POWERSTRIP_2A1C1,
+    MODEL_QMI_PLUG_TW02,
     MODELS_PLUG_WITH_USB_MIIO,
     MODELS_PLUG_MIIO,
     MODELS_POWERSTRIP_MIIO,
@@ -97,6 +98,8 @@ FEATURE_FLAGS_POWER_STRIP_V3 = (
 )
 
 FEATURE_FLAGS_PLUG_V3 = FEATURE_SET_WIFI_LED
+
+FEATURE_FLAGS_PLUG_TW = FEATURE_COUNTDOWN
 
 FEATURE_FLAGS_GENERIC = 0
 
@@ -677,6 +680,8 @@ class XiaomiPowerStripMiot(XiaomiPlugGenericSwitch):
 
         if self._model == MODEL_QMI_POWERSTRIP_2A1C1:
             self._device_features = FEATURE_FLAGS_POWER_STRIP_V3
+        elif self._model == MODEL_QMI_PLUG_TW02:
+            self._device_features = FEATURE_FLAGS_PLUG_TW
         else:
             self._device_features = 0
 
@@ -692,7 +697,8 @@ class XiaomiPowerStripMiot(XiaomiPlugGenericSwitch):
             self._state_attrs[ATTR_POWER_PRICE] = None
 
         self._state_attrs[ATTR_WORKING_TIME] = None
-        self._state_attrs[ATTR_KEEP_RELAY] = None
+        if self._model != MODEL_QMI_PLUG_TW02:
+            self._state_attrs[ATTR_KEEP_RELAY] = None
 
     async def async_update(self):
         """Fetch state from the device."""
@@ -719,7 +725,8 @@ class XiaomiPowerStripMiot(XiaomiPlugGenericSwitch):
                 self._state_attrs[ATTR_WIFI_LED] = state.wifi_led
 
             self._state_attrs[ATTR_WORKING_TIME] = state.working_time
-            self._state_attrs[ATTR_KEEP_RELAY] = state.keep_relay
+            if self._model != MODEL_QMI_PLUG_TW02:
+                self._state_attrs[ATTR_KEEP_RELAY] = state.keep_relay
 
         except DeviceException as ex:
             if self._available:

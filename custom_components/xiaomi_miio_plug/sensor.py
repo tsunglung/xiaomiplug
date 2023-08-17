@@ -22,6 +22,7 @@ from .const import (
     DOMAIN,
     PLUG_SENSORS,
     MODEL_CHUANGMI_PLUG_V3,
+    MODEL_QMI_POWERSTRIP_2A1C1,
     MODELS_POWERSTRIP_MIIO,
     MODELS_MIOT,
     XiaomiPlugSensorDescription
@@ -136,7 +137,8 @@ class XiaomiPlugSensor(SensorEntity):
             self._available = True
             self._state = getattr(state, self._attr, None)
             if self.entity_description.device_class == SensorDeviceClass.VOLTAGE:
-                self._state = self._state / 1000
+                if self._model == MODEL_QMI_POWERSTRIP_2A1C1:
+                    self._state = self._state / 1000
             if self.entity_description.device_class == SensorDeviceClass.DATE:
                 self._state = timedelta(seconds=self._state)
             if self.entity_description.key == "system_status":

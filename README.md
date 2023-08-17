@@ -28,6 +28,7 @@ Credits: Thanks to [Rytilahti](https://github.com/rytilahti/python-miio) for all
 | Xiaomi Smart Power Strip    | qmi.plug.2a1c1         | |
 | Xiaomi Smart Power Strip    | zimi.powerstrip.v2     | |
 | Xiaomi Air Conditioning Companion V3 | lumi.acpartner.v3  | |
+| Xiaomi Smart Plug TW        | qmi.plug.tw02  | |
 
 ## Features
 
@@ -94,6 +95,15 @@ Supported models: `qmi.plug.2a1c1`
   - Load power
   - Wifi LED
   - Mode (Power Strip V1 only)
+
+### Xiaomi Smart Plug TW
+
+Supported models: `qmi.plug.tw02`
+
+* Power (on, off)
+* Attributes
+  - Temperature
+  - Load power
 
 # Setup
 

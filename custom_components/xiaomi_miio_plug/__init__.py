@@ -20,7 +20,7 @@ from miio import (  # pylint: disable=import-error
     PowerStrip,
 )
 
-from .switch_miot import SwitchMiot
+from .switch_miot import SwitchMiot, SwitchMiotTW02
 
 from .const import (
     CONF_MODEL,
@@ -33,7 +33,7 @@ from .const import (
     MODELS_POWERSTRIP_MIIO,
     MODELS_ACPARTNER_MIIO,
     MODELS_MIOT,
-    MODELS_ALL_DEVICES
+    MODEL_QMI_PLUG_TW02
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -111,7 +111,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     elif model in MODELS_ACPARTNER_MIIO:
         plug = AirConditioningCompanionV3(host, token)
     elif model in MODELS_MIOT:
-        plug = SwitchMiot(host, token)
+        if model == MODEL_QMI_PLUG_TW02:
+            plug = SwitchMiotTW02(host, token)
+        else:
+            plug = SwitchMiot(host, token)
     else:
         _LOGGER.error(
             "Unsupported device found! Please create an issue at "

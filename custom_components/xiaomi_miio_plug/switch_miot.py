@@ -11,7 +11,8 @@ from miio.click_common import command, format_output
 from miio.device import DeviceStatus
 from miio.miot_device import MiotDevice
 from .const import (
-    MODEL_QMI_POWERSTRIP_2A1C1
+    MODEL_QMI_POWERSTRIP_2A1C1,
+    MODEL_QMI_PLUG_TW02
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +41,35 @@ MIOT_MAPPING = {
         "system_status": {"siid": 6, "piid": 3},  # read, notify
         "keep_relay": {"siid": 6, "piid": 4},  # read, notify, write
         "calibration": {"siid": 7, "piid": 1},  # read, notify, write
+    },
+    # https://home.miot-spec.com/spec?type=urn:miot-spec-v2:device:outlet:0000A002:qmi-tw02:1
+    MODEL_QMI_PLUG_TW02: {
+        "on": {"siid": 2, "piid": 1},  # read, notify, write
+        "system_status": {"siid": 2, "piid": 3},  # read, notify, write
+        "temperature": {"siid": 2, "piid": 6},  # read, notify
+        "working_time": {"siid": 2, "piid": 7},  # read, notify
+        "power_consumption": {"siid": 4, "piid": 1},  # read, notify
+        "current": {"siid": 4, "piid": 2},  # read, notify
+        "voltage": {"siid": 4, "piid": 3},  # read, notify
+        "load_power": {"siid": 4, "piid": 4},  # read, notify
+        "energy": {"siid": 4, "piid": 5},  # read, notify
+        "control_locked": {"siid": 5, "piid": 1},  # read, notify, write
+        "enable_count_down": {"siid": 6, "piid": 1},  # read, notify, write
+        "count_down_time": {"siid": 6, "piid": 2},  # read, notify, write
+        "count_down_remain_tm": {"siid": 6, "piid": 3},  # read, notify, write
+        "enable_relay_loop": {"siid": 6, "piid": 4},  # read, notify, write
+        "loop_relay_close_tm": {"siid": 6, "piid": 5},  # read, notify, write
+        "loop_relay_break_tm": {"siid": 6, "piid": 6},  # read, notify, write
+        "timer_ifo": {"siid": 6, "piid": 8},  # read, notify, write
+        "timer_cfg": {"siid": 6, "piid": 9},  # read, notify, write
+        "local_cd_enable": {"siid": 6, "piid": 10},  # read, notify, write
+        "local_cd_set_time": {"siid": 6, "piid": 11},  # read, notify, write
+        "local_cd_remain_time": {"siid": 6, "piid": 12},  # read, notify, write
+        "local_cd_action": {"siid": 6, "piid": 13},  # read, notify, write
+        "lowerpower_threshold": {"siid": 7, "piid": 1},  # read, notify, write
+        "lowerpower_time": {"siid": 7, "piid": 2},  # read, notify, write
+        "lowerpower_enable": {"siid": 7, "piid": 3},  # read, notify, write
+        "calibration": {"siid": 8, "piid": 3},  # read, notify, write
     }
 }
 
@@ -284,3 +314,65 @@ class SwitchMiot(MiotDevice):
 
     def off(self):
         return self.set_property("status", False)
+
+class SwitchStatusMiotTW02(SwitchStatusMiot):
+    """Container for status reports for Xiaomi SwitchStatusMiot."""
+
+    @property
+    def is_on(self) -> bool:
+        """True if device is currently on."""
+        return self.data["on"]
+
+    @property
+    def mode(self) -> int:
+        """Mode."""
+        return self.data.get("on")
+
+    @property
+    def remain_time(self) -> int:
+        """Remain Time"""
+        return self.data["count_down_remain_tm"]
+
+    @property
+    def open_time(self) -> int:
+        """Loop open time"""
+        return self.data["loop_relay_break_tm"]
+
+    @property
+    def close_time(self) -> int:
+        """Loop close time"""
+        return self.data["loop_relay_close_tm"]
+
+
+class SwitchMiotTW02(SwitchMiot):
+    """Interface for Plug Miot TW02"""
+    mapping = MIOT_MAPPING[MODEL_QMI_PLUG_TW02]
+
+    @command(
+        default_output=format_output(
+            "",
+            "Status: {result.status.name}\n"
+        )
+    )
+    def status(self) -> SwitchStatusMiotTW02:
+        """Retrieve properties."""
+        return SwitchStatusMiotTW02(
+            {
+                prop["did"]: prop["value"] if prop["code"] == 0 else None
+                for prop in self.get_properties_for_mapping()
+            }
+        )
+
+    @command(
+        click.argument("mode", type=bool),
+        default_output=format_output("Setting mode {mode}"),
+    )
+    def set_power_mode(self, mode: bool):
+        """Set power mode."""
+        return self.set_property("on", mode)
+
+    def on(self):
+        return self.set_property("on", True)
+
+    def off(self):
+        return self.set_property("on", False)
