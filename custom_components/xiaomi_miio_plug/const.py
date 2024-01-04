@@ -9,11 +9,11 @@ from homeassistant.components.sensor import (
 )
 
 from homeassistant.const import (
-    ELECTRIC_POTENTIAL_VOLT,
-    ELECTRIC_CURRENT_MILLIAMPERE,
-    ENERGY_KILO_WATT_HOUR,
-    POWER_WATT,
-    TIME_SECONDS
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTime
 )
 
 DEFAULT_NAME = "Xiaomi Switch"
@@ -113,42 +113,42 @@ PLUG_SENSORS: tuple[XiaomiPlugSensorDescription, ...] = (
     XiaomiPlugSensorDescription(
         key="power_consumption",
         name="Power consumption",
-        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
     XiaomiPlugSensorDescription(
         key="energy",
         name="Energy",
-        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
     XiaomiPlugSensorDescription(
         key="load_power",
         name="Power",
-        native_unit_of_measurement=POWER_WATT,
+        native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     XiaomiPlugSensorDescription(
         key="voltage",
         name="Voltage",
-        native_unit_of_measurement=ELECTRIC_POTENTIAL_VOLT,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     XiaomiPlugSensorDescription(
         key="current",
         name="Current",
-        native_unit_of_measurement=ELECTRIC_CURRENT_MILLIAMPERE,
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     XiaomiPlugSensorDescription(
         key="remain_time",
         name="Remain Time",
-        native_unit_of_measurement=TIME_SECONDS,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
         state_class=SensorStateClass.TOTAL,
         icon="mdi:counter"
     ),
