@@ -30,7 +30,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(seconds=10)
+SCAN_INTERVAL = timedelta(seconds=30)
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigType, async_add_entities: AddEntitiesCallback
