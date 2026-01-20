@@ -9,7 +9,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_TOKEN, CONF_DEVICE, CONF_MAC
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_TOKEN, CONF_DEVICE, CONF_MAC, MAJOR_VERSION, MINOR_VERSION
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
 
@@ -65,7 +65,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Init object."""
-        self.config_entry = config_entry
+        if (MAJOR_VERSION, MINOR_VERSION) < (2024, 11):
+            self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
